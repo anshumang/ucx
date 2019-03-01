@@ -9,6 +9,7 @@
 #include <uct/base/uct_md.h>
 #include <ucs/sys/sys.h>
 #include <net/if.h>
+#include "tcp_cma.h"
 
 #define UCT_TCP_NAME "tcp"
 
