@@ -1,5 +1,6 @@
 #
 # Copyright (C) Mellanox Technologies Ltd. 2001-2018.  ALL RIGHTS RESERVED.
+# Copyright (c) 2019, NVIDIA CORPORATION. All rights reserved.
 # See file LICENSE for terms.
 #
 
@@ -14,4 +15,5 @@ libuct_tcp_la_SOURCES = \
 	tcp_ep.c \
 	tcp_iface.c \
 	tcp_md.c \
-	tcp_net.c
+	tcp_net.c \
+	tcp_cma.c

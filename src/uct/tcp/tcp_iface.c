@@ -1,5 +1,6 @@
 /**
  * Copyright (C) Mellanox Technologies Ltd. 2001-2019.  ALL RIGHTS RESERVED.
+ * Copyright (c) 2019, NVIDIA CORPORATION. All rights reserved.
  * See file LICENSE for terms.
  */
 
@@ -259,6 +260,20 @@ static uct_iface_ops_t uct_tcp_iface_ops = {
     .iface_get_device_address = uct_tcp_iface_get_device_address,
     .iface_is_reachable       = uct_tcp_iface_is_reachable
 };
+
+ucs_status_t uct_tcp_resolve_addr(struct tcp_id *cm_id,
+                                     struct sockaddr *addr, int timeout_ms,
+                                     ucs_log_level_t log_level)
+{
+    char ip_port_str[UCS_SOCKADDR_STRING_LEN];
+
+    if (tcp_resolve_addr(cm_id, NULL, addr, timeout_ms)) {
+        ucs_log(log_level, "tcp_resolve_addr(addr=%s) failed: %m",
+                ucs_sockaddr_str(addr, ip_port_str, UCS_SOCKADDR_STRING_LEN));
+        return UCS_ERR_IO_ERROR;
+    }
+    return UCS_OK;
+}
 
 static UCS_CLASS_INIT_FUNC(uct_tcp_iface_t, uct_md_h md, uct_worker_h worker,
                            const uct_iface_params_t *params,

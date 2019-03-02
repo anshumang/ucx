@@ -6,19 +6,16 @@
 #if !defined(TCP_CMA_H)
 #define TCP_CMA_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+#include <netinet/in.h>
+#include <sys/socket.h>
 
-#ifdef __cplusplus
-}
-#endif
+#define TCP_MAX_PRIVATE_DATA		256
 
 /*
  * Upon receiving a device removal event, users must destroy the associated
  * TCP identifier and release all resources allocated with the device.
  */
-enum tcp_cm_event_type {
+enum tcp_event_type {
 	TCP_CM_EVENT_ADDR_RESOLVED,
 	TCP_CM_EVENT_ADDR_ERROR,
 	TCP_CM_EVENT_ROUTE_RESOLVED,
@@ -53,13 +50,13 @@ struct tcp_addr {
 		struct sockaddr_in	src_sin;
 		struct sockaddr_in6	src_sin6;
 		struct sockaddr_storage src_storage;
-	};
+	} saddr;
 	union {
 		struct sockaddr		dst_addr;
 		struct sockaddr_in	dst_sin;
 		struct sockaddr_in6	dst_sin6;
 		struct sockaddr_storage dst_storage;
-	};
+	} daddr;
 };
 
 struct tcp_route {
@@ -72,13 +69,13 @@ struct tcp_event_channel {
 	int			fd;
 };
 
-struct tcp_cm_id {
+struct tcp_id {
 	struct tcp_event_channel *channel;
 	void			*context;
 	struct tcp_route	 route;
 	enum tcp_port_space	 ps;
 	uint8_t			 port_num;
-	struct tcp_cm_event	*event;
+	struct tcp_event	*event;
 };
 
 struct tcp_conn_param {
@@ -89,13 +86,12 @@ struct tcp_conn_param {
 	uint8_t flow_control;
 	uint8_t retry_count;		/* ignored when accepting */
 	uint8_t rnr_retry_count;
-	/* Fields below ignored if a QP is created on the rdma_cm_id. */
 };
 
-struct tcp_cm_event {
-	struct tcp_cm_id	*id;
-	struct tcp_cm_id	*listen_id;
-	enum tcp_cm_event_type	 event;
+struct tcp_event {
+	struct tcp_id	*id;
+	struct tcp_id	*listen_id;
+	enum tcp_event_type	 event;
 	int			 status;
 	union {
 		struct tcp_conn_param conn;
@@ -123,7 +119,7 @@ struct tcp_event_channel *tcp_create_event_channel(void);
  *   Release all resources associated with an event channel and closes the
  *   associated file descriptor.
  * Notes:
- *   All tcp_cm_id's associated with the event channel must be destroyed,
+ *   All tcp_id's associated with the event channel must be destroyed,
  *   and all returned events must be acked before calling this function.
  * See also:
  *  tcp_create_event_channel, tcp_get_cm_event, tcp_ack_cm_event
@@ -133,47 +129,47 @@ void tcp_destroy_event_channel(struct tcp_event_channel *channel);
 /**
  * tcp_create_id - Allocate a communication identifier.
  * @channel: The communication channel that events associated with the
- *   allocated tcp_cm_id will be reported on.
+ *   allocated tcp_id will be reported on.
  * @id: A reference where the allocated communication identifier will be
  *   returned.
- * @context: User specified context associated with the tcp_cm_id.
+ * @context: User specified context associated with the tcp_id.
  * @ps: RDMA port space.
  * Description:
  *   Creates an identifier that is used to track communication information.
  * Notes:
- *   tcp_cm_id's are equivalent to a socket.
- *   Communication events on an rdma_cm_id are 
+ *   tcp_id's are equivalent to a socket.
+ *   Communication events on an tcp_id are 
  * reported through the associated event
- *   channel.  Users must release the tcp_cm_id by calling tcp_destroy_id.
+ *   channel.  Users must release the tcp_id by calling tcp_destroy_id.
  * See also:
  *   tcp_create_event_channel, tcp_destroy_id, tcp_get_devices,
  *   tcp_bind_addr, tcp_resolve_addr, tcp_connect, tcp_listen,
  */
 int tcp_create_id(struct tcp_event_channel *channel,
-		   struct tcp_cm_id **id, void *context,
+		   struct tcp_id **id, void *context,
 		   enum tcp_port_space ps);
 
 /**
  * tcp_destroy_id - Release a communication identifier.
  * @id: The communication identifier to destroy.
  * Description:
- *   Destroys the specified tcp_cm_id and cancels any outstanding
+ *   Destroys the specified tcp_id and cancels any outstanding
  *   asynchronous operation.
  * Notes:
- *   Users must free any associated QP with the tcp_cm_id before
+ *   Users must free any associated QP with the tcp_id before
  *   calling this routine and ack an related events.
  * See also:
  *   tcp_create_id, tcp_destroy_qp, tcp_ack_cm_event
  */
-int tcp_destroy_id(struct tcp_cm_id *id);
+int tcp_destroy_id(struct tcp_id *id);
 
 /**
  * tcp_bind_addr - Bind an TCP identifier to a source address.
  * @id: TCP identifier.
  * @addr: Local address information.  Wildcard values are permitted.
  * Description:
- *   Associates a source address with an tcp_cm_id.  The address may be
- *   wildcarded.  If binding to a specific local address, the tcp_cm_id
+ *   Associates a source address with an tcp_id.  The address may be
+ *   wildcarded.  If binding to a specific local address, the tcp_id
  *   will also be bound to a local TCP device.
  * Notes:
  *   Typically, this routine is called before calling tcp_listen to bind
@@ -183,7 +179,7 @@ int tcp_destroy_id(struct tcp_cm_id *id);
  * See also:
  *   tcp_create_id, tcp_listen, tcp_resolve_addr
  */
-int tcp_bind_addr(struct tcp_cm_id *id, struct sockaddr *addr);
+int tcp_bind_addr(struct tcp_id *id, struct sockaddr *addr);
 
 /**
  * tcp_resolve_addr - Resolve destination and optional source addresses.
@@ -193,22 +189,22 @@ int tcp_bind_addr(struct tcp_cm_id *id, struct sockaddr *addr);
  * @timeout_ms: Time to wait for resolution to complete.
  * Description:
  *   Resolve destination and optional source addresses from IP addresses
- *   to ??? (an RDMA address).  If successful, the specified rdma_cm_id will
+ *   to ??? (an RDMA address).  If successful, the specified tcp_id will
  *   be bound to ???(a local device).
  * Notes:
  *   This call is used to map a given destination IP address to a ??? (usable RDMA
- *   address).  If a source address is given, the tcp_cm_id is bound to that
+ *   address).  If a source address is given, the tcp_id is bound to that
  *   address, the same as if tcp_bind_addr were called.  If no source
- *   address is given, and the tcp_cm_id has not yet been bound to a device,
- *   then the tcp_cm_id will be bound to a source address based on the
- *   local routing tables.  After this call, the tcp_cm_id will be bound to
+ *   address is given, and the tcp_id has not yet been bound to a device,
+ *   then the tcp_id will be bound to a source address based on the
+ *   local routing tables.  After this call, the tcp_id will be bound to
  *   ??? (an RDMA device).  This call is typically made from the active side of a
  *   connection before calling tcp_resolve_route and tcp_connect.
  * See also:
  *   tcp_create_id, tcp_resolve_route, tcp_connect,
  *   tcp_get_cm_event, tcp_bind_addr
  */
-int tcp_resolve_addr(struct tcp_cm_id *id, struct sockaddr *src_addr,
+int tcp_resolve_addr(struct tcp_id *id, struct sockaddr *src_addr,
 		      struct sockaddr *dst_addr, int timeout_ms);
 
 /**
@@ -225,14 +221,14 @@ int tcp_resolve_addr(struct tcp_cm_id *id, struct sockaddr *src_addr,
  * See also:
  *   tcp_resolve_addr, tcp_connect, tcp_get_cm_event
  */
-int tcp_resolve_route(struct tcp_cm_id *id, int timeout_ms);
+int tcp_resolve_route(struct tcp_id *id, int timeout_ms);
 
 /**
  * rdma_connect - Initiate an active connection request.
  * @id: TCP identifier.
  * @conn_param: optional connection parameters.
  * Description:
- *   For a connected tcp_cm_id, this call initiates a connection request
+ *   For a connected tcp_id, this call initiates a connection request
  *   to a remote destination.
  * Notes:
  *   Users must have resolved a route to the destination address
@@ -242,7 +238,7 @@ int tcp_resolve_route(struct tcp_cm_id *id, int timeout_ms);
  * See also:
  *   tcp_resolve_route, tcp_listen, tcp_get_cm_event
  */
-int tcp_connect(struct tcp_cm_id *id, struct tcp_conn_param *conn_param);
+int tcp_connect(struct tcp_id *id, struct tcp_conn_param *conn_param);
 
 /**
  * tcp_listen - Listen for incoming connection requests.
@@ -253,15 +249,15 @@ int tcp_connect(struct tcp_cm_id *id, struct tcp_conn_param *conn_param);
  *   lookup.  The listen will be restricted to the locally bound source
  *   address.
  * Notes:
- *   Users must have bound the tcp_cm_id to a local address by calling
- *   tcp_bind_addr before calling this routine.  If the tcp_cm_id is
+ *   Users must have bound the tcp_id to a local address by calling
+ *   tcp_bind_addr before calling this routine.  If the tcp_id is
  *   bound to a specific IP address, the listen will be restricted to that
- *   address.  If the tcp_cm_id is bound
+ *   address.  If the tcp_id is bound
  *   to a TCP port number only, the listen will occur across all ??? (RDMA devices).
  * See also:
  *   tcp_bind_addr, tcp_connect, tcp_accept, tcp_get_cm_event
  */
-int rdma_listen(struct tcp_cm_id *id, int backlog);
+int tcp_listen(struct tcp_id *id, int backlog);
 
 /**
  * tcp_accept - Called to accept a connection request.
@@ -272,17 +268,17 @@ int rdma_listen(struct tcp_cm_id *id, int backlog);
  *   service lookup request.
  * Notes:
  *   Unlike the socket accept routine, tcp_accept is not called on a
- *   listening tcp_cm_id.  Instead, after calling tcp_listen, the user
+ *   listening tcp_id.  Instead, after calling tcp_listen, the user
  *   waits for a connection request event to occur.  Connection request
- *   events give the user a newly created tcp_cm_id, similar to a new
+ *   events give the user a newly created tcp_id, similar to a new
  *   socket.
- *   tcp_accept is called on the new tcp_cm_id.
+ *   tcp_accept is called on the new tcp_id.
  *   A user may override the default connection parameters and exchange
  *   private data as part of the connection by using the conn_param parameter.
  * See also:
  *   tcp_listen, tcp_reject, tcp_get_cm_event
  */
-int tcp_accept(struct tcp_cm_id *id, struct tcp_conn_param *conn_param);
+int tcp_accept(struct tcp_id *id, struct tcp_conn_param *conn_param);
 
 /**
  * tcp_get_cm_event - Retrieves the next pending communication event.
@@ -295,13 +291,13 @@ int tcp_accept(struct tcp_cm_id *id, struct tcp_conn_param *conn_param);
  *   The default synchronous behavior of this routine can be changed by
  *   modifying the file descriptor associated with the given channel.  All
  *   events that are reported must be acknowledged by calling tcp_ack_cm_event.
- *   Destruction of an tcp_cm_id will block until related events have been
+ *   Destruction of an tcp_id will block until related events have been
  *   acknowledged.
  * See also:
  *   tcp_ack_cm_event, tcp_create_event_channel, tcp_event_str
  */
 int tcp_get_cm_event(struct tcp_event_channel *channel,
-		      struct tcp_cm_event **event);
+		      struct tcp_event **event);
 
 /**
  * tcp_ack_cm_event - Free a communication event.
@@ -313,8 +309,9 @@ int tcp_get_cm_event(struct tcp_event_channel *channel,
  * See also:
  *   tcp_get_cm_event, tcp_destroy_id
  */
-int tcp_ack_cm_event(struct tcp_cm_event *event);
+int tcp_ack_cm_event(struct tcp_event *event);
 
+uint16_t tcp_get_src_port(struct tcp_id *id);
 /**
  * tcp_event_str - Returns a string representation of an tcpcm event.
  * @event: Asynchronous event.
@@ -323,6 +320,6 @@ int tcp_ack_cm_event(struct tcp_cm_event *event);
  * See also:
  *   rdma_get_cm_event
  */
-const char *tcp_event_str(enum tcp_cm_event_type event);
+const char *tcp_event_str(enum tcp_event_type event);
 
 #endif /* TCP_CMA_H */

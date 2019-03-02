@@ -1,5 +1,6 @@
 /**
  * Copyright (C) Mellanox Technologies Ltd. 2001-2016.  ALL RIGHTS RESERVED.
+ * Copyright (c) 2019, NVIDIA CORPORATION. All rights reserved.
  * See file LICENSE for terms.
  */
 
@@ -17,7 +18,7 @@ static ucs_config_field_t uct_tcp_md_config_table[] = {
 };
 
 
-static ucs_status_t uct_tcp_md_query(uct_md_h md, uct_md_attr_t *attr)
+ucs_status_t uct_tcp_md_query(uct_md_h md, uct_md_attr_t *attr)
 {
     attr->cap.flags         = UCT_MD_FLAG_SOCKADDR;
     attr->cap.max_alloc     = 0;
@@ -86,13 +87,13 @@ static uct_md_ops_t uct_tcp_md_ops = {
 
 static void uct_tcp_md_close(uct_md_h md)
 {
-    uct_tcp_md_t *tcpcm_md = ucs_derived_of(md, uct_tcp_md_t);
-    ucs_free(tcpcm_md);
+    uct_tcp_md_t *tcp_md = ucs_derived_of(md, uct_tcp_md_t);
+    ucs_free(tcp_md);
 }
 
 static int uct_tcp_get_event_type(struct tcp_event_channel *event_ch) /*XXX rdma_event_channel in librdma*/
 {
-    struct tcp_cm_event *event;
+    struct tcp_event *event;
     int ret, event_type;
 
     /* Fetch an event */
@@ -129,12 +130,6 @@ static int uct_tcp_is_addr_route_resolved(struct tcp_id *cm_id, /*XXX struct rdm
         ucs_debug("failed to resolve address (addr = %s). TCPCM event %s.",
                   ucs_sockaddr_str(addr, ip_port_str, UCS_SOCKADDR_STRING_LEN),
                   tcp_event_str(event_type)); /*XXX tcp_event_str in librdma*/
-        return 0;
-    }
-
-    if (cm_id->verbs->device->transport_type == IBV_TRANSPORT_IWARP) {
-        ucs_debug("%s: iWarp support is not implemented",
-                  ucs_sockaddr_str(addr, ip_port_str, UCS_SOCKADDR_STRING_LEN));
         return 0;
     }
 
@@ -177,9 +172,9 @@ static int uct_tcp_is_sockaddr_inaddr_any(struct sockaddr *addr)
 int uct_tcp_is_sockaddr_accessible(uct_md_h md, const ucs_sock_addr_t *sockaddr,
                                       uct_sockaddr_accessibility_t mode)
 {
-    uct_tcp_md_t *tcpcm_md = ucs_derived_of(md, uct_tcp_md_t);
+    uct_tcp_md_t *tcp_md = ucs_derived_of(md, uct_tcp_md_t);
     struct tcp_event_channel *event_ch = NULL;
-    struct tcp_cm_id *cm_id = NULL;
+    struct tcp_id *cm_id = NULL;
     int is_accessible = 0;
     char ip_port_str[UCS_SOCKADDR_STRING_LEN];
 
@@ -218,16 +213,16 @@ int uct_tcp_is_sockaddr_accessible(uct_md_h md, const ucs_sock_addr_t *sockaddr,
      * The timeout needs to be passed in ms */
     is_accessible = uct_tcp_is_addr_route_resolved(cm_id,
                                                      (struct sockaddr *)sockaddr->addr,
-                                                     UCS_MSEC_PER_SEC * rdmacm_md->addr_resolve_timeout);
+                                                     UCS_MSEC_PER_SEC * tcp_md->addr_resolve_timeout);
     if (!is_accessible) {
         goto out_destroy_id;
     }
 
 out_print:
-    ucs_debug("address %s (port %d) is accessible from tcpcm_md %p with mode: %d",
+    ucs_debug("address %s (port %d) is accessible from tcp_md %p with mode: %d",
               ucs_sockaddr_str((struct sockaddr *)sockaddr->addr, ip_port_str,
                                UCS_SOCKADDR_STRING_LEN),
-              ntohs(tcp_get_src_port(cm_id)), tcpcmcm_md, mode); /*XXX rdma_get_src_port in librdma*/
+              ntohs(tcp_get_src_port(cm_id)), tcp_md, mode); /*XXX rdma_get_src_port in librdma*/
 
 out_destroy_id:
     tcp_destroy_id(cm_id); /*XXX rdma_destroy_id in librdma*/
@@ -245,7 +240,7 @@ uct_tcp_md_open(const char *md_name, const uct_md_config_t *uct_md_config,
     uct_tcp_md_t *md;
     ucs_status_t status;
 
-    md = ucs_malloc(sizeof(*md), "tcpcm_md");
+    md = ucs_malloc(sizeof(*md), "tcp_md");
     if (md == NULL) {
         status = UCS_ERR_NO_MEMORY;
         goto out;
