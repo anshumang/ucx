@@ -299,8 +299,8 @@ static UCS_CLASS_INIT_FUNC(uct_tcp_iface_t, uct_md_h md, uct_worker_h worker,
                                             params->stats_root : NULL)
                               UCS_STATS_ARG(params->mode.device.dev_name));
 
-    ucs_strncpy_zero(self->if_name, params->mode.device.dev_name,
-                     sizeof(self->if_name));
+    //ucs_strncpy_zero(self->if_name, params->mode.device.dev_name,
+    //                 sizeof(self->if_name));
     self->outstanding           = 0;
     self->config.buf_size       = config->super.max_bcopy +
                                   sizeof(uct_tcp_am_hdr_t);
@@ -317,11 +317,11 @@ static UCS_CLASS_INIT_FUNC(uct_tcp_iface_t, uct_md_h md, uct_worker_h worker,
         return UCS_ERR_INVALID_PARAM;
     }
 
-    status = uct_tcp_netif_inaddr(self->if_name, &self->config.ifaddr,
-                                  &self->config.netmask);
-    if (status != UCS_OK) {
-        goto err;
-    }
+    //status = uct_tcp_netif_inaddr(self->if_name, &self->config.ifaddr,
+    //                              &self->config.netmask);
+    //if (status != UCS_OK) {
+    //    goto err;
+    //}
 
     self->epfd = epoll_create(1);
     if (self->epfd < 0) {
