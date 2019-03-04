@@ -118,35 +118,37 @@ static int uct_tcp_is_addr_route_resolved(struct tcp_id *cm_id, /*XXX struct rdm
 {
     char ip_port_str[UCS_SOCKADDR_STRING_LEN];
     ucs_status_t status;
-    int event_type;
+    //int event_type;
 
     status = uct_tcp_resolve_addr(cm_id, addr, timeout_ms, UCS_LOG_LEVEL_DEBUG);
     if (status != UCS_OK) {
         return 0;
     }
 
-    event_type = uct_tcp_get_event_type(cm_id->channel);
+    /*event_type = */uct_tcp_get_event_type(cm_id->channel);
+#if 0
     if (event_type != TCP_CM_EVENT_ADDR_RESOLVED) { /*XXX RDMA_CM_EVENT_ADDR_RESOLVED in librdma*/
         ucs_debug("failed to resolve address (addr = %s). TCPCM event %s.",
                   ucs_sockaddr_str(addr, ip_port_str, UCS_SOCKADDR_STRING_LEN),
                   tcp_event_str(event_type)); /*XXX tcp_event_str in librdma*/
         return 0;
     }
-
+#endif
     if (tcp_resolve_route(cm_id, timeout_ms)) { /*XXX rdma_resolve_route in librdma*/
         ucs_debug("rdma_resolve_route(addr = %s) failed: %m",
                    ucs_sockaddr_str(addr, ip_port_str, UCS_SOCKADDR_STRING_LEN));
         return 0;
     }
 
-    event_type = uct_tcp_get_event_type(cm_id->channel);
+    /*event_type = */uct_tcp_get_event_type(cm_id->channel);
+#if 0    
     if (event_type != TCP_CM_EVENT_ROUTE_RESOLVED) { /*XXX RDMA_CM_EVENT_ROUTE_RESOLVED in librdma*/
         ucs_debug("failed to resolve route to addr = %s. TCPCM event %s.",
                   ucs_sockaddr_str(addr, ip_port_str, UCS_SOCKADDR_STRING_LEN),
                   tcp_event_str(event_type));
         return 0;
     }
-
+#endif
     return 1;
 }
 
