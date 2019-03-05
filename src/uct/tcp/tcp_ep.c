@@ -155,9 +155,10 @@ ucs_status_t uct_tcp_ep_create_connected(const uct_ep_params_t *params,
 
     UCT_EP_PARAMS_CHECK_DEV_IFACE_ADDRS(params);
     memset(&dest_addr, 0, sizeof(dest_addr));
-    dest_addr.sin_family = AF_INET;
-    dest_addr.sin_port   = *(in_port_t*)params->iface_addr;
-    dest_addr.sin_addr   = *(struct in_addr*)params->dev_addr;
+    //dest_addr.sin_family = AF_INET;
+    //dest_addr.sin_port   = *(in_port_t*)params->iface_addr;
+    //dest_addr.sin_addr   = *(struct in_addr*)params->dev_addr;
+    memcpy(&dest_addr, params->sockaddr->addr, sizeof(dest_addr));
 
     /* TODO try to reuse existing connection */
     status = uct_tcp_ep_create(iface, -1, &dest_addr, &tcp_ep);
