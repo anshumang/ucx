@@ -82,6 +82,11 @@ typedef struct uct_tcp_iface {
     int                           epfd;              /* Event poll set of sockets */
     size_t                        outstanding;       /* How much data in the EP send buffers */
 
+    /** Fields used only for server side */
+    void                                 *conn_request_arg;
+    uct_sockaddr_conn_request_callback_t conn_request_cb;
+    uint32_t                             cb_flags;
+
     struct {
         struct sockaddr_in        ifaddr;            /* Network address */
         struct sockaddr_in        netmask;           /* Network address mask */

@@ -184,6 +184,7 @@ static void uct_tcp_iface_listen_close(uct_tcp_iface_t *iface)
     }
 }
 
+/*
 static void uct_tcp_iface_connect_handler(int listen_fd, void *arg)
 {
     uct_tcp_iface_t *iface = arg;
@@ -205,6 +206,8 @@ static void uct_tcp_iface_connect_handler(int listen_fd, void *arg)
         return;
     }
 
+    fprintf(stderr, "tcp_iface %p: accepted connection from %s:%d to fd %d\n", iface,
+              inet_ntoa(peer_addr.sin_addr), ntohs(peer_addr.sin_port), fd);
     ucs_debug("tcp_iface %p: accepted connection from %s:%d to fd %d", iface,
               inet_ntoa(peer_addr.sin_addr), ntohs(peer_addr.sin_port), fd);
 
@@ -215,6 +218,79 @@ static void uct_tcp_iface_connect_handler(int listen_fd, void *arg)
     }
 
     uct_tcp_ep_mod_events(ep, EPOLLIN, 0);
+}
+*/
+
+static void uct_tcp_iface_process_conn_req(uct_tcp_iface_t *iface/*,
+                                              struct tcp_event *event*/)
+{
+    //uct_rdmacm_priv_data_hdr_t *hdr;
+
+    //hdr = (uct_rdmacm_priv_data_hdr_t*) event->param.ud.private_data;
+    //ucs_assert(hdr->status == UCS_OK);
+
+    fprintf(stderr, "uct_tcp_iface_process_conn_req : iface->conn_request_cb %p\n", iface->conn_request_cb);
+    /* TODO check the iface's cb_flags to determine when to invoke this callback.
+     * currently only UCT_CB_FLAG_ASYNC is supported so the cb is invoked from here */
+    iface->conn_request_cb(&iface->super.super, iface->conn_request_arg, /*XXX:ucp_listener_h*/
+                           /* connection request*/
+                           &iface->listen_fd/*event*/, /*XXX: uct_conn_request_h, used by uct_iface_accept, uct_iface_reject*/
+                           /* private data */
+                           NULL/*UCS_PTR_BYTE_OFFSET(event->param.ud.private_data,
+                                               sizeof(uct_rdmacm_priv_data_hdr_t))*/,
+                           /* length */
+                           0/*hdr->length*/);
+}
+
+static unsigned
+uct_tcp_iface_process_event(uct_tcp_iface_t *iface/*,
+                               struct tcp_event *event*/)
+{
+    fprintf(stderr, "uct_tcp_iface_process_event : iface->conn_request_cb %p\n", iface->conn_request_cb);
+    uct_tcp_iface_process_conn_req(iface/*, event*/);
+    return 0;
+}
+
+static void uct_tcp_iface_event_handler(int fd, void *arg)
+{
+    uct_tcp_iface_t             *iface     = arg;
+    //uct_tcp_ctx_t               *cm_id_ctx = NULL;
+    //struct tcp_event           *event;
+    //unsigned                       proc_event_flags;
+    //int                            ret;
+    fprintf(stderr, "uct_tcp_iface_event_handler : iface->conn_request_cb %p\n", iface->conn_request_cb);
+
+    //for (;;) {
+        /* Fetch an event */
+        //ret = rdma_get_cm_event(iface->event_ch, &event);
+        //if (ret) {
+            /* EAGAIN (in a non-blocking rdma_get_cm_event) means that
+             * there are no more events */
+        //    if (errno != EAGAIN) {
+        //        ucs_warn("rdma_get_cm_event() failed: %m");
+        //    }
+        //    return;
+        //}
+
+        ///*proc_event_flags = */uct_tcp_iface_process_event(iface, event);
+        uct_tcp_iface_process_event(iface);
+        //if (!iface->is_server) {
+        //    cm_id_ctx = (uct_rdmacm_ctx_t *)event->id->context;
+        //}
+
+        //if (proc_event_flags & UCT_RDMACM_PROCESS_EVENT_ACK_EVENT_FLAG) {
+        //    ret = rdma_ack_cm_event(event);
+        //    if (ret) {
+        //        ucs_warn("rdma_ack_cm_event() failed: %m");
+        //    }
+        //}
+
+        //if ((proc_event_flags & UCT_RDMACM_PROCESS_EVENT_DESTROY_CM_ID_FLAG) &&
+        //    (cm_id_ctx != NULL)) {
+        //    uct_rdmacm_iface_release_cm_id(iface, cm_id_ctx);
+        //    uct_rdmacm_iface_client_start_next_ep(iface);
+        //}
+    //}
 }
 
 ucs_status_t uct_tcp_iface_set_sockopt(uct_tcp_iface_t *iface, int fd)
@@ -367,13 +443,26 @@ static UCS_CLASS_INIT_FUNC(uct_tcp_iface_t, uct_md_h md, uct_worker_h worker,
         goto err_close_sock;
     }
 
-    ucs_debug("tcp_iface %p: listening for connections on %s:%d", self,
+    fprintf(stderr, "tcp_iface %p: listening for connections on %s:%d\n", self,
               inet_ntoa(bind_addr.sin_addr), ntohs(bind_addr.sin_port));
+    //ucs_debug("tcp_iface %p: listening for connections on %s:%d", self,
+    //          inet_ntoa(bind_addr.sin_addr), ntohs(bind_addr.sin_port));
 
+    //if (params->open_mode & UCT_IFACE_OPEN_MODE_SOCKADDR_SERVER) {
+        self->cb_flags         = params->mode.sockaddr.cb_flags;
+        self->conn_request_cb  = params->mode.sockaddr.conn_request_cb;
+        self->conn_request_arg = params->mode.sockaddr.conn_request_arg;
+    //}
+    fprintf(stderr, "uct_tcp_iface_t_init : self->conn_request_cb %p\n", self->conn_request_cb);
+    //self->conn_request_cb(&self->super.super, self->conn_request_arg, NULL, NULL, 0);
     /* Register event handler for incoming connections */
+    //status = ucs_async_set_event_handler(self->super.worker->async->mode,
+    //                                     self->listen_fd, POLLIN|POLLERR,
+    //                                     uct_tcp_iface_connect_handler, self,
+    //                                     self->super.worker->async);
     status = ucs_async_set_event_handler(self->super.worker->async->mode,
-                                         self->listen_fd, POLLIN|POLLERR,
-                                         uct_tcp_iface_connect_handler, self,
+                                         self->listen_fd, POLLIN/*|POLLERR*/,
+                                         uct_tcp_iface_event_handler, self,
                                          self->super.worker->async);
     if (status != UCS_OK) {
         goto err_close_sock;
