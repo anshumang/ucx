@@ -93,6 +93,70 @@ out:
     return UCS_OK;
 }
 
+ucs_status_t ucp_wireup_msg_progress_noconnect(uct_pending_req_t *self)
+{
+    ucp_request_t *req = ucs_container_of(self, ucp_request_t, send.uct);
+    ucp_ep_h ep = req->send.ep;
+    //ssize_t packed_len;
+    unsigned am_flags;
+
+    if (req->send.wireup.type == UCP_WIREUP_MSG_REQUEST) {
+        if (ep->flags & UCP_EP_FLAG_REMOTE_CONNECTED) {
+            ucs_trace("ep %p: not sending wireup message - remote already connected",
+                      ep);
+            goto out;
+        }
+    } else if (req->send.wireup.type == UCP_WIREUP_MSG_PRE_REQUEST) {
+        ucs_assert (!(ep->flags & UCP_EP_FLAG_REMOTE_CONNECTED));
+    }
+
+    /* send the active message */
+    if (req->send.wireup.type == UCP_WIREUP_MSG_ACK) {
+        req->send.lane = ucp_ep_get_am_lane(ep);
+    } else {
+        req->send.lane = ucp_ep_get_wireup_msg_lane(ep);
+    }
+
+    am_flags = 0;
+    if ((req->send.wireup.type == UCP_WIREUP_MSG_REQUEST) ||
+        (req->send.wireup.type == UCP_WIREUP_MSG_PRE_REQUEST)) {
+        am_flags |= UCT_SEND_FLAG_SIGNALED;
+    }
+
+    VALGRIND_CHECK_MEM_IS_DEFINED(&req->send.wireup, sizeof(req->send.wireup));
+    VALGRIND_CHECK_MEM_IS_DEFINED(req->send.buffer, req->send.length);
+
+    ucp_listener_schedule_accept_cb(ep);
+    //packed_len = uct_ep_am_bcopy(ep->uct_eps[req->send.lane], UCP_AM_ID_WIREUP,
+    //                             ucp_wireup_msg_pack, req, am_flags);
+    //if (packed_len < 0) {
+    //    if (packed_len != UCS_ERR_NO_RESOURCE) {
+    //        ucs_error("failed to send wireup: %s", ucs_status_string(packed_len));
+    //    }
+    //    return (ucs_status_t)packed_len;
+    //}
+
+    switch (req->send.wireup.type) {
+    case UCP_WIREUP_MSG_PRE_REQUEST:
+        ep->flags |= UCP_EP_FLAG_CONNECT_PRE_REQ_SENT;
+        break;
+    case UCP_WIREUP_MSG_REQUEST:
+        ep->flags |= UCP_EP_FLAG_CONNECT_REQ_SENT;
+        break;
+    case UCP_WIREUP_MSG_REPLY:
+        ep->flags |= UCP_EP_FLAG_CONNECT_REP_SENT;
+        break;
+    case UCP_WIREUP_MSG_ACK:
+        ep->flags |= UCP_EP_FLAG_CONNECT_ACK_SENT;
+        break;
+    }
+
+out:
+    ucs_free((void*)req->send.buffer);
+    ucs_free(req);
+    return UCS_OK;
+}
+
 static unsigned ucp_wireup_address_index(const unsigned *order,
                                          uint64_t tl_bitmap,
                                          ucp_rsc_index_t tl_index)
@@ -142,6 +206,70 @@ static ucs_status_t ucp_wireup_msg_send(ucp_ep_h ep, uint8_t type,
     }
 
     req->send.uct.func           = ucp_wireup_msg_progress;
+    req->send.datatype           = ucp_dt_make_contig(1);
+    ucp_request_send_state_init(req, ucp_dt_make_contig(1), 0);
+
+    /* pack all addresses */
+    status = ucp_address_pack(ep->worker, ucp_wireup_is_ep_needed(ep) ? ep : NULL,
+                              tl_bitmap, order, &req->send.length, &address);
+    if (status != UCS_OK) {
+        ucs_free(req);
+        ucs_error("failed to pack address: %s", ucs_status_string(status));
+        return status;
+    }
+
+    req->send.buffer = address;
+
+    /* send the indices addresses that should be connected by remote side */
+    for (lane = 0; lane < UCP_MAX_LANES; ++lane) {
+        rsc_index = rsc_tli[lane];
+        if (rsc_index != UCP_NULL_RESOURCE) {
+            req->send.wireup.tli[lane] = ucp_wireup_address_index(order,
+                                                                  tl_bitmap,
+                                                                  rsc_index);
+        } else {
+            req->send.wireup.tli[lane] = -1;
+        }
+    }
+
+    ucp_request_send(req, 0);
+    return UCS_OK;
+}
+
+static ucs_status_t ucp_wireup_msg_send_noconnect(ucp_ep_h ep, uint8_t type,
+                                        uint64_t tl_bitmap,
+                                        const ucp_rsc_index_t *rsc_tli)
+{
+    ucp_rsc_index_t rsc_index;
+    ucp_lane_index_t lane;
+    ucp_request_t* req;
+    ucs_status_t status;
+    void *address;
+    unsigned *order = ucs_alloca(ep->worker->context->num_tls * sizeof(*order));
+
+    ucs_assert(ep->cfg_index != (uint8_t)-1);
+
+    /* We cannot allocate from memory pool because it's not thread safe
+     * and this function may be called from any thread
+     */
+    req = ucs_malloc(sizeof(*req), "wireup_msg_req");
+    if (req == NULL) {
+        return UCS_ERR_NO_MEMORY;
+    }
+
+    req->flags                   = 0;
+    req->send.ep                 = ep;
+    req->send.wireup.type        = type;
+    req->send.wireup.err_mode    = ucp_ep_config(ep)->key.err_mode;
+    req->send.wireup.conn_sn     = ep->conn_sn;
+    req->send.wireup.src_ep_ptr  = (uintptr_t)ep;
+    if (ep->flags & UCP_EP_FLAG_DEST_EP) {
+        req->send.wireup.dest_ep_ptr = ucp_ep_dest_ep_ptr(ep);
+    } else {
+        req->send.wireup.dest_ep_ptr = 0;
+    }
+
+    req->send.uct.func           = ucp_wireup_msg_progress_noconnect;
     req->send.datatype           = ucp_dt_make_contig(1);
     ucp_request_send_state_init(req, ucp_dt_make_contig(1), 0);
 
@@ -874,6 +1002,23 @@ ucs_status_t ucp_wireup_send_pre_request(ucp_ep_h ep)
 
     ucs_debug("ep %p: send wireup pre-request (flags=0x%x)", ep, ep->flags);
     status = ucp_wireup_msg_send(ep, UCP_WIREUP_MSG_PRE_REQUEST, tl_bitmap, rsc_tli);
+
+    ep->flags |= UCP_EP_FLAG_CONNECT_PRE_REQ_QUEUED;
+    return status;
+}
+
+ucs_status_t ucp_wireup_send_pre_request_noconnect(ucp_ep_h ep)
+{
+    ucp_rsc_index_t rsc_tli[UCP_MAX_LANES];
+    uint64_t tl_bitmap = -1;  /* pack full worker address */
+    ucs_status_t status;
+
+    ucs_assert(ep->flags & UCP_EP_FLAG_LISTENER);
+    ucs_assert(!(ep->flags & UCP_EP_FLAG_CONNECT_PRE_REQ_QUEUED));
+    memset(rsc_tli, UCP_NULL_RESOURCE, sizeof(rsc_tli));
+
+    ucs_debug("ep %p: send wireup pre-request (flags=0x%x)", ep, ep->flags);
+    status = ucp_wireup_msg_send_noconnect(ep, UCP_WIREUP_MSG_PRE_REQUEST, tl_bitmap, rsc_tli);
 
     ep->flags |= UCP_EP_FLAG_CONNECT_PRE_REQ_QUEUED;
     return status;

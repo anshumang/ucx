@@ -16,6 +16,7 @@
 
 static unsigned ucp_listener_accept_cb_progress(void *arg)
 {
+    fprintf(stderr, "ucp_listener_accept_cb_progress \n");
     ucp_ep_h       ep       = arg;
     ucp_listener_h listener = ucp_ep_ext_gen(ep)->listener;
 
@@ -34,6 +35,7 @@ static unsigned ucp_listener_accept_cb_progress(void *arg)
      * and we are here because long address requires wireup protocol
      */
     if (listener && listener->accept_cb) {
+        fprintf(stderr, "ucp_listener_accept_cb_progress listener %p && listener->accept_cb %p \n", listener, listener->accept_cb);
         listener->accept_cb(ep, listener->arg);
     }
 
@@ -50,6 +52,7 @@ int ucp_listener_accept_cb_remove_filter(const ucs_callbackq_elem_t *elem,
 
 void ucp_listener_schedule_accept_cb(ucp_ep_h ep)
 {
+    fprintf(stderr, "ucp_listener_schedule_accept_cb \n");
     uct_worker_cb_id_t prog_id = UCS_CALLBACKQ_ID_NULL;
 
     uct_worker_progress_register_safe(ep->worker->uct,
@@ -73,9 +76,10 @@ static unsigned ucp_listener_conn_request_progress(void *arg)
         listener->conn_cb(conn_request, listener->arg);
         return 1;
     }
-
+ 
     worker = listener->wiface.worker;
     UCS_ASYNC_BLOCK(&worker->async);
+
     /* coverity[overrun-buffer-val] */
     status = ucp_ep_create_accept(worker, client_data, &ep);
 
@@ -84,23 +88,24 @@ static unsigned ucp_listener_conn_request_progress(void *arg)
     }
 
     if (ep->flags & UCP_EP_FLAG_LISTENER) {
-        status = ucp_wireup_send_pre_request(ep);
+        //status = ucp_wireup_send_pre_request(ep);
+        status = ucp_wireup_send_pre_request_noconnect(ep);
     } else {
         /* send wireup request message, to connect the client to the server's
            new endpoint */
         ucs_assert(!(ep->flags & UCP_EP_FLAG_CONNECT_REQ_QUEUED));
-        status = ucp_wireup_send_request(ep);
+        //status = ucp_wireup_send_request(ep);
     }
 
     if (status != UCS_OK) {
         goto out;
     }
 
-    status = uct_iface_accept(listener->wiface.iface, conn_request->uct_req);
-    if (status != UCS_OK) {
-        ucp_ep_destroy_internal(ep);
-        goto out;
-    }
+    //status = uct_iface_accept(listener->wiface.iface, conn_request->uct_req);
+    //if (status != UCS_OK) {
+    //    ucp_ep_destroy_internal(ep);
+    //    goto out;
+    //}
 
     if (listener->accept_cb != NULL) {
         if (ep->flags & UCP_EP_FLAG_LISTENER) {
@@ -137,6 +142,7 @@ static void ucp_listener_conn_request_callback(uct_iface_h tl_iface, void *arg,
                                                const void *conn_priv_data,
                                                size_t length)
 {
+    fprintf(stderr, "ucp_listener_conn_request_callback entry...\n");
     ucp_listener_h     listener = arg;
     uct_worker_cb_id_t prog_id  = UCS_CALLBACKQ_ID_NULL;
     ucp_conn_request_h conn_request;

@@ -229,12 +229,28 @@ static void uct_tcp_iface_process_conn_req(uct_tcp_iface_t *iface/*,
     //hdr = (uct_rdmacm_priv_data_hdr_t*) event->param.ud.private_data;
     //ucs_assert(hdr->status == UCS_OK);
 
+    socklen_t addrlen;
+
+    addrlen = sizeof(iface->peer_addr);
+    iface->accept_fd = accept(iface->listen_fd, (struct sockaddr*)&iface->peer_addr, &addrlen);
+    if (iface->accept_fd < 0) {
+        if ((errno != EAGAIN) && (errno != EINTR)) {
+            ucs_error("accept() failed: %m");
+            uct_tcp_iface_listen_close(iface);
+        }
+        return;
+    }
+
+    fprintf(stderr, "tcp_iface %p: accepted connection from %s:%d to fd %d\n", iface,
+              inet_ntoa(iface->peer_addr.sin_addr), ntohs(iface->peer_addr.sin_port), iface->accept_fd);
+    ucs_debug("tcp_iface %p: accepted connection from %s:%d to fd %d", iface,
+              inet_ntoa(iface->peer_addr.sin_addr), ntohs(iface->peer_addr.sin_port), iface->accept_fd);
     fprintf(stderr, "uct_tcp_iface_process_conn_req : iface->conn_request_cb %p\n", iface->conn_request_cb);
     /* TODO check the iface's cb_flags to determine when to invoke this callback.
      * currently only UCT_CB_FLAG_ASYNC is supported so the cb is invoked from here */
     iface->conn_request_cb(&iface->super.super, iface->conn_request_arg, /*XXX:ucp_listener_h*/
                            /* connection request*/
-                           &iface->listen_fd/*event*/, /*XXX: uct_conn_request_h, used by uct_iface_accept, uct_iface_reject*/
+                           &iface->accept_fd/*event*/, /*XXX: uct_conn_request_h, used by uct_iface_accept, uct_iface_reject*/
                            /* private data */
                            NULL/*UCS_PTR_BYTE_OFFSET(event->param.ud.private_data,
                                                sizeof(uct_rdmacm_priv_data_hdr_t))*/,

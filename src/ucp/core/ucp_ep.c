@@ -138,7 +138,7 @@ ucs_status_t ucp_ep_create_sockaddr_aux(ucp_worker_h worker,
     ucp_ep_h ep;
 
     /* allocate endpoint */
-    status = ucp_ep_new(worker, remote_address->name, "listener", &ep);
+    status = ucp_ep_new(worker, /*remote_address->name*/"bond0", "listener", &ep);
     if (status != UCS_OK) {
         goto err;
     }
@@ -148,18 +148,18 @@ ucs_status_t ucp_ep_create_sockaddr_aux(ucp_worker_h worker,
         goto err_delete;
     }
 
-    status = ucp_wireup_ep_connect_aux(wireup_ep, params,
-                                       remote_address->address_count,
-                                       remote_address->address_list);
-    if (status != UCS_OK) {
-        goto err_destroy_wireup_ep;
-    }
+    //status = ucp_wireup_ep_connect_aux(wireup_ep, params,
+    //                                   remote_address->address_count,
+    //                                   remote_address->address_list);
+    //if (status != UCS_OK) {
+    //    goto err_destroy_wireup_ep;
+    //}
 
     *ep_p = ep;
     return status;
 
-err_destroy_wireup_ep:
-    uct_ep_destroy(ep->uct_eps[0]);
+//err_destroy_wireup_ep:
+    //uct_ep_destroy(ep->uct_eps[0]);
 err_delete:
     ucp_ep_delete(ep);
 err:
@@ -404,24 +404,24 @@ ucs_status_t ucp_ep_create_accept(ucp_worker_h worker,
     ucs_status_t           status;
 
     params.field_mask = UCP_EP_PARAM_FIELD_ERR_HANDLING_MODE;
-    params.err_mode   = client_data->err_mode;
+    //params.err_mode   = client_data->err_mode;
 
-    status = ucp_address_unpack(worker, client_data + 1, &remote_address);
-    if (status != UCS_OK) {
-        goto out;
-    }
+    //status = ucp_address_unpack(worker, client_data + 1, &remote_address);
+    //if (status != UCS_OK) {
+    //    goto out;
+    //}
 
-    if (client_data->is_full_addr) {
+    //if (client_data->is_full_addr) {
         /* create endpoint to the worker address we got in the private data */
-        status = ucp_ep_create_to_worker_addr(worker, &params, &remote_address,
-                                              UCP_EP_CREATE_AM_LANE, "listener",
-                                              ep_p);
-        if (status == UCS_OK) {
-            ucp_ep_flush_state_reset(*ep_p);
-        } else {
-            goto out_free_address;
-        }
-    } else {
+    //    status = ucp_ep_create_to_worker_addr(worker, &params, &remote_address,
+    //                                          UCP_EP_CREATE_AM_LANE, "listener",
+    //                                          ep_p);
+    //    if (status == UCS_OK) {
+    //        ucp_ep_flush_state_reset(*ep_p);
+    //    } else {
+    //        goto out_free_address;
+    //    }
+    //} else {
         status = ucp_ep_create_sockaddr_aux(worker, &params, &remote_address,
                                             ep_p);
         if (status == UCS_OK) {
@@ -433,13 +433,13 @@ ucs_status_t ucp_ep_create_accept(ucp_worker_h worker,
         } else {
             goto out_free_address;
         }
-    }
+    //}
 
     ucp_ep_update_dest_ep_ptr(*ep_p, client_data->ep_ptr);
 
 out_free_address:
-    ucs_free(remote_address.address_list);
-out:
+    //ucs_free(remote_address.address_list);
+//out:
     return status;
 }
 
